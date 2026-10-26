@@ -5103,6 +5103,14 @@ fn showMouse(self: *Surface) void {
     };
 }
 
+/// Returns true if the terminal's active screen is the alternate screen.
+/// Takes the renderer state lock, so callers must not already hold it.
+fn activeScreenIsAlternate(self: *Surface) bool {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+    return self.io.terminal.screens.active_key == .alternate;
+}
+
 /// Perform a binding action. A binding is a keybinding. This function
 /// must be called from the GUI thread.
 ///
@@ -5508,24 +5516,25 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             // we send the message. If the currently active screen is on the
             // alternate screen then clear screen does nothing so we want to
             // return false so the keybind can be unconsumed.
-            {
-                self.renderer_state.mutex.lock();
-                defer self.renderer_state.mutex.unlock();
-                if (self.io.terminal.screens.active_key == .alternate) return false;
-            }
+            if (self.activeScreenIsAlternate()) return false;
 
             self.queueIo(.{
                 .clear_screen = .{ .history = true },
             }, .unlocked);
         },
 
+        // The alternate screen has no scrollback, so every scroll action
+        // is a no-op there. Report not performed so `performable:` bindings
+        // pass the key through to the running program (#6765).
         .scroll_to_top => {
+            if (self.activeScreenIsAlternate()) return false;
             self.queueIo(.{
                 .scroll_viewport = .{ .top = {} },
             }, .unlocked);
         },
 
         .scroll_to_bottom => {
+            if (self.activeScreenIsAlternate()) return false;
             self.queueIo(.{
                 .scroll_viewport = .{ .bottom = {} },
             }, .unlocked);
@@ -5536,6 +5545,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 self.renderer_state.mutex.lock();
                 defer self.renderer_state.mutex.unlock();
                 const t: *terminal.Terminal = self.renderer_state.terminal;
+                if (t.screens.active_key == .alternate) return false;
                 t.screens.active.scroll(.{ .row = n });
             }
 
@@ -5546,6 +5556,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {
                 self.renderer_state.mutex.lock();
                 defer self.renderer_state.mutex.unlock();
+                if (self.io.terminal.screens.active_key == .alternate) return false;
                 const sel = self.io.terminal.screens.active.selection orelse return false;
                 const tl = sel.topLeft(self.io.terminal.screens.active);
                 self.io.terminal.screens.active.scroll(.{ .pin = tl });
@@ -5555,6 +5566,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .scroll_page_up => {
+            if (self.activeScreenIsAlternate()) return false;
             const rows: isize = @intCast(self.size.grid().rows);
             self.queueIo(.{
                 .scroll_viewport = .{ .delta = -1 * rows },
@@ -5562,6 +5574,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .scroll_page_down => {
+            if (self.activeScreenIsAlternate()) return false;
             const rows: isize = @intCast(self.size.grid().rows);
             self.queueIo(.{
                 .scroll_viewport = .{ .delta = rows },
@@ -5569,6 +5582,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .scroll_page_fractional => |fraction| {
+            if (self.activeScreenIsAlternate()) return false;
             const rows: f32 = @floatFromInt(self.size.grid().rows);
             const delta: isize = @intFromFloat(@trunc(fraction * rows));
             self.queueIo(.{
@@ -5577,12 +5591,14 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .scroll_page_lines => |lines| {
+            if (self.activeScreenIsAlternate()) return false;
             self.queueIo(.{
                 .scroll_viewport = .{ .delta = lines },
             }, .unlocked);
         },
 
         .jump_to_prompt => |delta| {
+            if (self.activeScreenIsAlternate()) return false;
             self.queueIo(.{
                 .jump_to_prompt = @intCast(delta),
             }, .unlocked);

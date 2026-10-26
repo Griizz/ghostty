@@ -1726,7 +1726,10 @@ class: ?[:0]const u8 = null,
 ///    Only consume the input if the action is able to be performed.
 ///    For example, the `copy_to_clipboard` action will only consume the input
 ///    if there is a selection to copy. If there is no selection, Ghostty
-///    behaves as if the keybind was not set. This has no effect with `global:`
+///    behaves as if the keybind was not set. Scroll actions (`scroll_*`,
+///    `jump_to_prompt`) are not performable on the alternate screen used by
+///    full-screen programs such as `vim`, `less`, or `tmux`, so the key is
+///    passed to them. This has no effect with `global:`
 ///    or `all:`-prefixed keybinds. For key sequences, this will reset the
 ///    sequence if the action is not performable (acting identically to not
 ///    having a keybind set at all).
